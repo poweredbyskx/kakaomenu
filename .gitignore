@@ -1,0 +1,72 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+*.pyd
+*.sqlite3
+*.db
+
+# Виртуальное окружение
+venv/
+env/
+.venv/
+
+# Flask
+instance/
+.env
+.flaskenv
+
+# Медиа
+uploads/
+
+# IDE
+.idea/
+.vscode/
+*.sublime-*
+
+# Логи и кэш
+*.log
+.cache/
+.pytest_cache/
+.coverage
+
+# Виртуальное окружение
+.venv/
+venv/
+env/
+ENV/
+
+# Python кэш
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Flask
+instance/
+.instance/
+*.db
+cafe.db
+*.sqlite
+*.sqlite3
+
+# Загруженные фото (самое важное!)
+app/static/uploads/
+static/uploads/
+uploads/
+
+# Логи и редакторы
+*.log
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Миграции — оставляем в репо, но если хочешь скрыть версии
+# migrations/versions/*
+
+# Railway
+railway.json
+.railway/

@@ -1,0 +1,278 @@
+{% extends "base.html" %}
+
+{% block title %}KAKAO - Завтраки и кофе{% endblock %}
+
+{% block head_extra %}
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/menu.css') }}">
+{% endblock %}
+
+{% block content %}
+    <div class="header-overlay">
+        <div class="header-top">
+            <a href="{{ url_for('admin.login') }}" class="header-admin" title="Администратор"></a>
+            <div class="search-container">
+                <span class="search-icon">🔍</span>
+                <input type="text" class="search-input" id="searchInput" placeholder="Поиск блюд...">
+            </div>
+        </div>
+
+        <img src="{{ url_for('static', filename='uploads/logo.png') }}" alt="KAKAO" class="header-logo">
+
+        <div class="header-buttons">
+            <a href="tel:+99364359786" class="header-btn">Позвонить</a>
+            <a href="https://maps.app.goo.gl/LVKyeZMYQEL1x71XA" target="_blank" class="header-btn">Локация</a>
+        </div>
+
+        <div class="header-time">Пн-Пт: 08:00 - 23:00</div>
+    </div>
+
+    <div id="home" class="main-content">
+        <div class="menu-scroll" id="categoriesContainer">
+            <div style="padding: 5px 20px; color: #999;">Загрузка категорий...</div>
+        </div>
+
+        <div class="items-container" id="dishesContainer">
+        </div>
+    </div>
+
+    <div id="product-modal" class="product-modal">
+        <div class="product-modal-overlay" onclick="closeProductModal()"></div>
+        <div class="product-modal-content">
+
+            <div class="product-modal-body">
+                <div class="product-image-section">
+                    <div class="product-large-image" id="product-large-image"></div>
+                </div>
+                <div class="product-title-price-section">
+                    <div class="product-title-price-row">
+                        <h2 class="product-title" id="product-title">Название продукта</h2>
+                        <div class="product-price" id="product-price">0 м</div>
+                    </div>
+                    <div class="product-separator"></div>
+                </div>
+                <div class="product-info-section">
+                    <div class="product-info-card">
+                        <div class="product-description" id="product-description">
+                            Описание продукта...
+                        </div>
+                        <div class="product-separator"></div>
+                        <button class="product-close-modal-btn" onclick="closeProductModal()">Закрыть</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let allDishes = [];
+        let filteredDishes = [];
+        let selectedCategoryId = null;
+
+        async function loadCategories() {
+            try {
+                const response = await fetch('/api/categories');
+                const categories = await response.json();
+
+                const container = document.getElementById('categoriesContainer');
+
+                if (categories.length === 0) {
+                    container.innerHTML = '<div style="padding: 20px; color: #999;">Категории не найдены</div>';
+                    return;
+                }
+
+                // Show only category buttons, no "All" button
+                const buttonsHTML = categories.map((cat) => `
+                    <button class="menu-btn" 
+                            onclick="filterByCategory(${cat.id}, this)">
+                        ${cat.name}
+                    </button>
+                `).join('');
+
+                container.innerHTML = buttonsHTML;
+
+                // Enable mouse wheel scroll for menu categories
+                container.addEventListener('wheel', (e) => {
+                    e.preventDefault();
+                    container.scrollLeft += e.deltaY;
+                });
+
+                // Don't load dishes until a category is clicked
+                selectedCategoryId = null;
+                document.getElementById('dishesContainer').innerHTML = '';
+            } catch (error) {
+                console.error('Ошибка загрузки категорий:', error);
+                document.getElementById('categoriesContainer').innerHTML = 
+                    '<div style="padding: 20px; color: red;">Ошибка загрузки категорий</div>';
+            }
+        }
+
+        async function loadDishes() {
+            try {
+                // Always load ALL dishes first, then filter by category if needed
+                const response = await fetch('/api/dishes');
+                allDishes = await response.json();
+                
+                // Filter by category if one is selected
+                if (selectedCategoryId) {
+                    filteredDishes = allDishes.filter(dish => dish.category_id === selectedCategoryId);
+                } else {
+                    filteredDishes = [...allDishes];
+                }
+
+                renderDishes();
+            } catch (error) {
+                console.error('Ошибка загрузки блюд:', error);
+                document.getElementById('dishesContainer').innerHTML = 
+                    '<div style="padding: 20px; text-align: center; color: red;">Ошибка загрузки меню</div>';
+            }
+        }
+
+        function renderDishes() {
+            const container = document.getElementById('dishesContainer');
+
+            if (filteredDishes.length === 0) {
+                container.innerHTML = '<div style="padding: 20px; text-align: center; color: #999;">Нет блюд в этой категории</div>';
+                return;
+            }
+
+            const dishesHTML = `
+                <div class="items-grid">
+                    ${filteredDishes.map(dish => `
+                        <div class="item-card" onclick="openProductModal(this)">
+                            <div class="item-image" style="background-image: url('${dish.image_path || ''}')"></div>
+                            <div class="item-info">
+                                <div class="item-details">
+                                    <div class="item-name">${dish.name}</div>
+                                    <div class="item-description">${dish.description || 'Нет описания'}</div>
+                                </div>
+                                <div class="item-price">${dish.price}</div>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+
+            container.innerHTML = dishesHTML;
+        }
+
+        function filterByCategory(categoryId, button) {
+            document.querySelectorAll('.menu-btn').forEach(btn => btn.classList.remove('active'));
+            button.classList.add('active');
+
+            selectedCategoryId = categoryId;
+            
+            // Load dishes when category is clicked
+            loadDishes();
+        }
+
+        // Search input slide animation and functionality
+        const searchInput = document.getElementById('searchInput');
+        const searchContainer = document.querySelector('.search-container');
+        
+        // Toggle search expansion on click
+        searchInput.addEventListener('click', function(e) {
+            if (!this.classList.contains('active')) {
+                this.classList.add('active');
+                searchContainer.classList.add('search-active');
+                this.focus();
+            }
+        });
+        
+        // Keep expanded when focused
+        searchInput.addEventListener('focus', function() {
+            this.classList.add('active');
+            searchContainer.classList.add('search-active');
+        });
+        
+        // Collapse search when clicking outside or losing focus (if empty)
+        document.addEventListener('click', function(e) {
+            if (!searchContainer.contains(e.target)) {
+                if (!searchInput.value.trim()) {
+                    searchInput.classList.remove('active');
+                    searchContainer.classList.remove('search-active');
+                    searchInput.blur();
+                }
+            }
+        });
+        
+        searchInput.addEventListener('input', (e) => {
+            const searchTerm = e.target.value.toLowerCase().trim();
+
+            // Search always works across ALL dishes, regardless of current category
+            if (searchTerm === '') {
+                // If no search term, respect category filter
+                if (selectedCategoryId) {
+                    filteredDishes = allDishes.filter(dish => dish.category_id === selectedCategoryId);
+                } else {
+                    filteredDishes = [...allDishes];
+                }
+            } else {
+                // Search across ALL dishes (ignore category filter when searching)
+                filteredDishes = allDishes.filter(dish =>
+                    dish.name.toLowerCase().includes(searchTerm) ||
+                    (dish.description || '').toLowerCase().includes(searchTerm)
+                );
+            }
+
+            renderDishes();
+        });
+
+        function openProductModal(cardElement) {
+            const modal = document.getElementById('product-modal');
+
+            const nameElement = cardElement.querySelector('.item-name');
+            const priceElement = cardElement.querySelector('.item-price');
+            const imageElement = cardElement.querySelector('.item-image');
+            const descriptionElement = cardElement.querySelector('.item-description');
+
+            const name = nameElement ? nameElement.textContent : 'Название продукта';
+            const price = priceElement ? priceElement.textContent : '—';
+            const imageUrl = imageElement ? window.getComputedStyle(imageElement).backgroundImage.slice(5, -2) : '';
+            const description = descriptionElement ? descriptionElement.textContent : 'Описание не указано';
+
+            document.getElementById('product-title').textContent = name;
+            document.getElementById('product-price').textContent = price;
+            document.getElementById('product-description').textContent = description;
+
+            const largeImage = document.getElementById('product-large-image');
+            if (largeImage && imageUrl) {
+                largeImage.style.backgroundImage = `url('${imageUrl}')`;
+            }
+
+            modal.classList.add('active');
+            document.body.style.overflow = 'hidden';
+        }
+
+        function closeProductModal() {
+            const modal = document.getElementById('product-modal');
+            const closeBtn = document.querySelector('.product-close-modal-btn');
+            
+            // Add active class for blue background on click
+            if (closeBtn) {
+                closeBtn.classList.add('active');
+                setTimeout(() => {
+                    closeBtn.classList.remove('active');
+                }, 150);
+            }
+            
+            modal.classList.remove('active');
+            document.body.style.overflow = '';
+        }
+
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                closeProductModal();
+            }
+        });
+
+        loadCategories();
+    </script>
+{% endblock %}
+
+
+
+

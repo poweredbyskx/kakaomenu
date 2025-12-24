@@ -1,0 +1,394 @@
+{% extends "base.html" %}
+
+{% block title %}Админ-панель - KAKAO{% endblock %}
+
+{% block head_extra %}
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+{% endblock %}
+
+{% block content %}
+    <div class="container">
+        <div class="header">
+            <h1>☕ Админ-панель KAKAO</h1>
+            <div class="header-actions">
+                <a href="{{ url_for('main.index') }}" class="btn btn-secondary">На главную</a>
+                <a href="{{ url_for('admin.logout') }}" class="btn btn-danger">Выход</a>
+            </div>
+        </div>
+
+        <div class="content">
+            <!-- Левая колонка: Добавление блюда -->
+            <div class="card">
+                <h2>➕ Добавить блюдо</h2>
+                <div id="message"></div>
+
+                <form id="dishForm" enctype="multipart/form-data">
+                    <div class="form-group">
+                        <label for="category">Категория *</label>
+                        <select id="category" required>
+                            <option value="">Выберите категорию</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="name">Название блюда *</label>
+                        <input type="text" id="name" required placeholder="Например: Капучино">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="description">Описание</label>
+                        <textarea id="description" placeholder="Описание блюда..."></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="price">Цена</label>
+                        <input type="text" id="price" placeholder="Например: 25 м">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="image">Фотография</label>
+                        <div class="file-input-wrapper">
+                            <label for="image" class="file-input-label">
+                                📸 Выберите фото (макс 20MB)
+                            </label>
+                            <input type="file" id="image" accept="image/*">
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary" style="width: 100%;">
+                        Добавить блюдо
+                    </button>
+                </form>
+            </div>
+
+            <!-- Правая колонка: Список блюд -->
+            <div class="card">
+                <h2>📋 Текущие блюда</h2>
+
+                <div class="form-group">
+                    <label for="filterCategory">Фильтр по категории</label>
+                    <select id="filterCategory">
+                        <option value="">Все категории</option>
+                    </select>
+                </div>
+
+                <div id="dishesList" class="dishes-list">
+                    <div class="loading">Загрузка...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно редактирования блюда -->
+    <div id="editModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.5); z-index: 2000; align-items: center; justify-content: center;">
+        <div style="background: white; padding: 30px; border-radius: 12px; max-width: 500px; width: 90%; max-height: 90vh; overflow-y: auto;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2 style="margin: 0;">✏️ Редактировать блюдо</h2>
+                <button onclick="closeEditModal()" style="background: none; border: none; font-size: 24px; cursor: pointer; padding: 0; width: 30px; height: 30px;">✕</button>
+            </div>
+            <div id="editMessage"></div>
+            <form id="editDishForm" enctype="multipart/form-data">
+                <div class="form-group">
+                    <label for="editCategory">Категория *</label>
+                    <select id="editCategory" required></select>
+                </div>
+                <div class="form-group">
+                    <label for="editName">Название блюда *</label>
+                    <input type="text" id="editName" required placeholder="Например: Капучино">
+                </div>
+                <div class="form-group">
+                    <label for="editDescription">Описание</label>
+                    <textarea id="editDescription" placeholder="Описание блюда..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="editPrice">Цена</label>
+                    <input type="text" id="editPrice" placeholder="Например: 25 м">
+                </div>
+                <div class="form-group">
+                    <label for="editImage">Фотография (оставьте пустым, чтобы не менять)</label>
+                    <div class="file-input-wrapper">
+                        <label for="editImage" class="file-input-label">
+                            📸 Выберите новое фото (макс 20MB)
+                        </label>
+                        <input type="file" id="editImage" accept="image/*">
+                    </div>
+                    <div id="currentImagePreview" style="margin-top: 10px;"></div>
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button type="submit" class="btn btn-primary" style="flex: 1;">Сохранить изменения</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeEditModal()" style="flex: 1;">Отмена</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        let editingDishId = null;
+
+        const categoriesEndpoint = '/api/categories';
+        const dishesEndpoint = '/api/dishes';
+        const adminDishEndpoint = '/admin/api/dish';
+
+        // Загрузить категории
+        async function loadCategories() {
+            try {
+                const response = await fetch(categoriesEndpoint);
+                const categories = await response.json();
+
+                const categorySelect = document.getElementById('category');
+                const filterSelect = document.getElementById('filterCategory');
+                const editCategorySelect = document.getElementById('editCategory');
+
+                [categorySelect, filterSelect, editCategorySelect].forEach(select => {
+                    if (!select) return;
+                    select.innerHTML = select.id === 'category' || select.id === 'editCategory'
+                        ? '<option value="">Выберите категорию</option>'
+                        : '<option value="">Все категории</option>';
+                });
+
+                categories.forEach(cat => {
+                    // Добавляем в основную форму
+                    const option1 = document.createElement('option');
+                    option1.value = cat.id;
+                    option1.textContent = cat.name;
+                    categorySelect.appendChild(option1);
+
+                    // Добавляем в фильтр
+                    const option2 = document.createElement('option');
+                    option2.value = cat.id;
+                    option2.textContent = cat.name;
+                    filterSelect.appendChild(option2);
+                    
+                    // Добавляем в форму редактирования
+                    const option3 = document.createElement('option');
+                    option3.value = cat.id;
+                    option3.textContent = cat.name;
+                    editCategorySelect.appendChild(option3);
+                });
+            } catch (error) {
+                console.error('Ошибка загрузки категорий:', error);
+            }
+        }
+
+        // Загрузить блюда
+        async function loadDishes() {
+            try {
+                const categoryId = document.getElementById('filterCategory').value;
+                const url = categoryId
+                    ? `${dishesEndpoint}?category_id=${categoryId}`
+                    : dishesEndpoint;
+
+                const response = await fetch(url);
+                const dishes = await response.json();
+
+                const container = document.getElementById('dishesList');
+                if (dishes.length === 0) {
+                    container.innerHTML = '<div class="loading">Нет блюд в этой категории</div>';
+                    return;
+                }
+
+                container.innerHTML = dishes.map(dish => `
+                    <div class="dish-item">
+                        <div class="dish-info">
+                            <div class="dish-name">${dish.name}</div>
+                            <div class="dish-details">
+                                ${dish.price} • ${(dish.description || '').substring(0, 40) || 'Нет описания'}
+                            </div>
+                        </div>
+                        <div class="dish-actions">
+                            <button class="btn btn-secondary btn-small" onclick="editDish(${dish.id})">
+                                ✏️ Ред.
+                            </button>
+                            <button class="btn btn-danger btn-small" onclick="deleteDish(${dish.id})">
+                                🗑️ Удал.
+                            </button>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('Ошибка загрузки блюд:', error);
+                document.getElementById('dishesList').innerHTML =
+                    '<div class="loading" style="color: red;">Ошибка загрузки</div>';
+            }
+        }
+
+        // Добавить блюдо
+        document.getElementById('dishForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const formData = new FormData();
+            formData.append('name', document.getElementById('name').value);
+            formData.append('description', document.getElementById('description').value);
+            formData.append('price', document.getElementById('price').value);
+            formData.append('category_id', document.getElementById('category').value);
+
+            const imageFile = document.getElementById('image').files[0];
+            if (imageFile) {
+                formData.append('image', imageFile);
+            }
+
+            try {
+                const response = await fetch(adminDishEndpoint, {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                if (response.ok) {
+                    showMessage('✅ Блюдо добавлено успешно', 'success');
+                    document.getElementById('dishForm').reset();
+                    loadDishes();
+                } else {
+                    const error = await response.json();
+                    showMessage('❌ ' + (error.error || 'Ошибка'), 'error');
+                }
+            } catch (error) {
+                showMessage('❌ Ошибка соединения: ' + error.message, 'error');
+            }
+        });
+
+        // Удалить блюдо
+        async function deleteDish(id) {
+            if (!confirm('Вы уверены?')) return;
+
+            try {
+                const response = await fetch(`${adminDishEndpoint}/${id}`, {
+                    method: 'DELETE',
+                });
+
+                if (response.ok) {
+                    showMessage('✅ Блюдо удалено', 'success');
+                    loadDishes();
+                } else {
+                    showMessage('❌ Ошибка при удалении', 'error');
+                }
+            } catch (error) {
+                showMessage('❌ Ошибка: ' + error.message, 'error');
+            }
+        }
+
+        // Редактировать блюдо - загрузить данные и показать модальное окно
+        async function editDish(id) {
+            editingDishId = id;
+            
+            try {
+                // Загружаем данные блюда
+                const response = await fetch(`${adminDishEndpoint}/${id}`);
+                if (!response.ok) {
+                    showEditMessage('❌ Ошибка загрузки данных', 'error');
+                    return;
+                }
+                
+                const dish = await response.json();
+                
+                // Заполняем форму
+                document.getElementById('editName').value = dish.name;
+                document.getElementById('editDescription').value = dish.description || '';
+                document.getElementById('editPrice').value = dish.price || '';
+                document.getElementById('editCategory').value = dish.category_id;
+                
+                // Показываем текущее изображение
+                const previewDiv = document.getElementById('currentImagePreview');
+                if (dish.image_path) {
+                    previewDiv.innerHTML = `
+                        <div style="margin-top: 10px;">
+                            <strong>Текущее фото:</strong><br>
+                            <img src="${dish.image_path}" alt="Текущее фото" 
+                                 style="max-width: 200px; max-height: 200px; margin-top: 8px; border-radius: 8px; border: 1px solid #e0e0e0;">
+                        </div>
+                    `;
+                } else {
+                    previewDiv.innerHTML = '<div style="margin-top: 10px; color: #999;">Нет фото</div>';
+                }
+                
+                // Показываем модальное окно
+                document.getElementById('editModal').style.display = 'flex';
+                document.body.style.overflow = 'hidden';
+            } catch (error) {
+                showEditMessage('❌ Ошибка: ' + error.message, 'error');
+            }
+        }
+        
+        // Закрыть модальное окно редактирования
+        function closeEditModal() {
+            document.getElementById('editModal').style.display = 'none';
+            document.body.style.overflow = '';
+            document.getElementById('editDishForm').reset();
+            document.getElementById('currentImagePreview').innerHTML = '';
+            document.getElementById('editMessage').textContent = '';
+            document.getElementById('editMessage').className = '';
+            editingDishId = null;
+        }
+        
+        // Обработчик отправки формы редактирования
+        document.getElementById('editDishForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            if (!editingDishId) {
+                showEditMessage('❌ Ошибка: ID блюда не указан', 'error');
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('name', document.getElementById('editName').value);
+            formData.append('description', document.getElementById('editDescription').value);
+            formData.append('price', document.getElementById('editPrice').value);
+            formData.append('category_id', document.getElementById('editCategory').value);
+            
+            const imageFile = document.getElementById('editImage').files[0];
+            if (imageFile) {
+                formData.append('image', imageFile);
+            }
+            
+            try {
+                const response = await fetch(`${adminDishEndpoint}/${editingDishId}`, {
+                    method: 'PUT',
+                    body: formData,
+                });
+                
+                if (response.ok) {
+                    showEditMessage('✅ Блюдо обновлено успешно', 'success');
+                    loadDishes();
+                    setTimeout(() => {
+                        closeEditModal();
+                    }, 1500);
+                } else {
+                    const error = await response.json();
+                    showEditMessage('❌ ' + (error.error || 'Ошибка обновления'), 'error');
+                }
+            } catch (error) {
+                showEditMessage('❌ Ошибка соединения: ' + error.message, 'error');
+            }
+        });
+        
+        // Показать сообщение в модальном окне редактирования
+        function showEditMessage(text, type) {
+            const messageDiv = document.getElementById('editMessage');
+            messageDiv.className = `message ${type}`;
+            messageDiv.textContent = text;
+            setTimeout(() => {
+                messageDiv.textContent = '';
+                messageDiv.className = '';
+            }, 3000);
+        }
+
+        // Показать сообщение
+        function showMessage(text, type) {
+            const messageDiv = document.getElementById('message');
+            messageDiv.className = `message ${type}`;
+            messageDiv.textContent = text;
+            setTimeout(() => {
+                messageDiv.textContent = '';
+                messageDiv.className = '';
+            }, 3000);
+        }
+
+        // Фильтр по категории
+        document.getElementById('filterCategory').addEventListener('change', loadDishes);
+
+        // Инициализация
+        loadCategories();
+        loadDishes();
+    </script>
+{% endblock %}
+
+
