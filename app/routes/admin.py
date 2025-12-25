@@ -1,3 +1,5 @@
+# app/routes/admin.py
+
 from flask import (
     flash,
     jsonify,
@@ -47,7 +49,7 @@ def dashboard():
 
 
 @admin_bp.post("/api/dish")
-@csrf.exempt  # используем fetch в JS без CSRF токена
+@csrf.exempt
 @login_required
 def add_dish():
     name = request.form.get("name", "").strip()
@@ -82,24 +84,24 @@ def add_dish():
 @csrf.exempt
 @login_required
 def get_dish(dish_id: int):
-    """Получить данные одного блюда для редактирования."""
+    """Получить данные одного блюда для редактирования (для фронтенда)."""
     dish = db.session.get(Dish, dish_id)
     if not dish:
         return jsonify({"error": "Блюдо не найдено"}), 404
-    
-    from flask import url_for
+
     image_url = ""
     if dish.image_path:
+        # Нормализуем слеши для Windows/Linux совместимости
         normalized_path = dish.image_path.replace("\\", "/")
-        image_url = url_for("static", filename=normalized_path)
-    
+        image_url = url_for("static", filename=normalized_path, _external=True)  # _external=True для полного URL (удобно для JS)
+
     return jsonify({
         "id": dish.id,
         "name": dish.name,
         "description": dish.description or "",
         "price": dish.price or "—",
         "category_id": dish.category_id,
-        "image_path": image_url,
+        "image_url": image_url,  # лучше назвать image_url, а не image_path
     })
 
 
@@ -111,42 +113,44 @@ def update_dish(dish_id: int):
     if not dish:
         return jsonify({"error": "Блюдо не найдено"}), 404
 
-    # Поддерживаем как JSON, так и multipart/form-data
+    # Поддержка JSON и form-data
     if request.is_json:
         data = request.get_json() or {}
     else:
         data = request.form.to_dict()
 
-    # Обновляем текстовые поля
+    # Текстовые поля
     if "name" in data:
-        dish.name = data["name"].strip() if isinstance(data["name"], str) else str(data["name"]).strip()
+        dish.name = str(data["name"]).strip()
     if "description" in data:
-        dish.description = data["description"].strip() if isinstance(data["description"], str) else str(data["description"]).strip()
+        dish.description = str(data["description"]).strip()
     if "price" in data:
-        dish.price = (data["price"].strip() if isinstance(data["price"], str) else str(data["price"]).strip()) or "—"
-    
-    # Обновляем категорию (если изменена)
+        dish.price = str(data["price"]).strip() or "—"
+
     new_category = None
     if "category_id" in data:
-        category_id = int(data["category_id"]) if isinstance(data["category_id"], str) else data["category_id"]
+        try:
+            category_id = int(data["category_id"])
+        except (ValueError, TypeError):
+            return jsonify({"error": "Неверный category_id"}), 400
         new_category = db.session.get(Category, category_id)
         if not new_category:
             return jsonify({"error": "Категория не найдена"}), 400
         dish.category = new_category
-    
-    # Обрабатываем загрузку нового изображения
+
+    # Новое изображение
     image_file = request.files.get("image")
-    if image_file:
-        # Удаляем старое изображение, если оно было
+    if image_file and image_file.filename:  # проверяем, что файл реально загружен
+        # Удаляем старое
         if dish.image_path:
             delete_image(dish.image_path)
-        
-        # Определяем категорию для сохранения (новая или текущая)
-        target_category = new_category if new_category else dish.category
+
+        # Сохраняем новое в папку актуальной категории
+        target_category = new_category or dish.category
         dish.image_path = save_dish_image(image_file, target_category.name)
 
     db.session.commit()
-    return jsonify({"id": dish.id, "name": dish.name})
+    return jsonify({"id": dish.id, "name": dish.name}), 200
 
 
 @admin_bp.delete("/api/dish/<int:dish_id>")
@@ -157,7 +161,6 @@ def delete_dish(dish_id: int):
     if not dish:
         return jsonify({"error": "Блюдо не найдено"}), 404
 
-    # Удаляем файл изображения, если он существует
     if dish.image_path:
         delete_image(dish.image_path)
 
@@ -165,6 +168,3 @@ def delete_dish(dish_id: int):
     db.session.commit()
 
     return jsonify({"message": "Блюдо удалено"}), 200
-
-
-

@@ -1,3 +1,5 @@
+# app/utils.py
+
 import os
 import secrets
 from pathlib import Path
@@ -7,78 +9,70 @@ from PIL import Image
 
 
 def _ensure_upload_folder(category_name: str | None = None) -> Path:
-    """Создать папку для загрузки, при необходимости с подпапкой категории."""
+    """
+    Создаёт и возвращает путь к папке для загрузки.
+    Учитывает возможный Volume на Render/Railway.
+    """
     upload_root = Path(current_app.config["UPLOADS_ROOT"])
     upload_folder = upload_root / current_app.config["DISH_UPLOAD_SUBDIR"]
-    
-    # Если указано имя категории, создаём подпапку с этим именем
+
     if category_name:
-        upload_folder = upload_folder / category_name
-    
+        # Очищаем имя категории от потенциально опасных символов
+        safe_category = "".join(c for c in category_name if c.isalnum() or c in " -_()")
+        upload_folder = upload_folder / safe_category.strip()
+
     upload_folder.mkdir(parents=True, exist_ok=True)
     return upload_folder
 
 
 def save_dish_image(file_storage, category_name: str | None = None) -> str:
     """
-    Сохранить и сжать изображение блюда.
-
-    Args:
-        file_storage: FileStorage объект из request.files
-        category_name: Имя категории для создания подпапки (например, "Кофе")
-
-    Возвращает относительный путь от static folder, например:
-        uploads/dishes/Кофе/abc123.jpg (если category_name указан)
-        uploads/dishes/abc123.jpg (если category_name не указан)
-    Этот путь используется с url_for('static', filename=...)
+    Сохраняет и сжимает фото блюда.
+    Возвращает относительный путь от static (для url_for('static', ...)).
     """
-    if not file_storage:
+    if not file_storage or not file_storage.filename:
         return ""
 
     upload_folder = _ensure_upload_folder(category_name)
 
-    # Генерируем безопасное имя файла
+    # Безопасное случайное имя
     ext = os.path.splitext(file_storage.filename)[1].lower() or ".jpg"
     filename = secrets.token_hex(16) + ext
     filepath = upload_folder / filename
 
-    # Сохраняем и сжимаем
+    # Сжатие через Pillow
     image = Image.open(file_storage)
     if image.mode in ("RGBA", "P"):
         image = image.convert("RGB")
     image.thumbnail((1600, 1600))
     image.save(filepath, optimize=True, quality=80)
 
-    # Путь относительно static folder для использования с url_for('static', filename=...)
-    base_path = f"uploads/{current_app.config['DISH_UPLOAD_SUBDIR']}"
+    # Относительный путь для шаблонов
+    base = f"uploads/{current_app.config['DISH_UPLOAD_SUBDIR']}"
     if category_name:
-        return f"{base_path}/{category_name}/{filename}"
-    return f"{base_path}/{filename}"
+        safe_category = "".join(c for c in category_name if c.isalnum() or c in " -_()").strip()
+        return f"{base}/{safe_category}/{filename}"
+    return f"{base}/{filename}"
 
 
 def delete_image(image_path: str | None) -> None:
     """
-    Удалить файл изображения с диска.
-
-    Args:
-        image_path: Относительный путь от static folder (например, "uploads/dishes/Кофе/abc123.jpg")
+    Безопасно удаляет файл изображения по относительному пути от static.
     """
     if not image_path:
         return
-    
+
     try:
+        # Полный путь от корня static
         static_folder = Path(current_app.static_folder)
-        file_path = static_folder / image_path
-        
-        # Проверяем, что путь находится внутри static folder (безопасность)
-        try:
-            file_path.resolve().relative_to(static_folder.resolve())
-        except ValueError:
-            # Путь находится вне static folder - не удаляем
+        file_path = (static_folder / image_path.lstrip("/")).resolve()
+
+        # Защита от выхода за пределы static (path traversal attack)
+        static_folder_resolved = static_folder.resolve()
+        if not file_path.is_file() or not str(file_path).startswith(str(static_folder_resolved)):
             return
-        
-        if file_path.exists() and file_path.is_file():
-            file_path.unlink()
+
+        file_path.unlink()
     except Exception:
-        # Игнорируем ошибки при удалении (файл может уже не существовать)
+        # Тихо игнорируем ошибки (файл может быть уже удалён или недоступен)
         pass
