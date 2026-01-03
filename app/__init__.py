@@ -66,27 +66,6 @@ def create_app(test_config: dict | None = None) -> Flask:
     return app
 
 
-def init_single_admin(app: Flask) -> None:
-    """Инициализировать единственного администратора: username=Boss, password=kakao."""
-    with app.app_context():
-        from .models import AdminUser
-
-        # Удалить всех других администраторов (не Boss)
-        other_admins = AdminUser.query.filter(AdminUser.username != "Boss").all()
-        for admin in other_admins:
-            db.session.delete(admin)
-
-        # Создать Boss администратора, если не существует
-        boss_admin = AdminUser.query.filter_by(username="Boss").first()
-        if not boss_admin:
-            boss_admin = AdminUser(username="Boss")
-            boss_admin.set_password("kakao")
-            db.session.add(boss_admin)
-            db.session.commit()
-        else:
-            db.session.commit()
-
-
 def register_cli_commands(app: Flask) -> None:
     from .models import AdminUser, Category, Dish
     from .seed_data import CATEGORY_FIXTURES, DISH_FIXTURES
