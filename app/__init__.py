@@ -58,8 +58,10 @@ def create_app(test_config: dict | None = None) -> Flask:
     # Модели импортируются для Alembic
     from . import models  # noqa: F401
 
-    # Инициализация единственного администратора (Boss/kakao)
-    init_single_admin(app)
+    # Убрано: init_single_admin(app)
+    # Причина: на продакшене (Render) база может быть пустой при старте,
+    # запрос к AdminUser вызывает краш до применения миграций.
+    # Админа создаём один раз вручную через Shell после деплоя.
 
     register_cli_commands(app)
 
@@ -179,6 +181,3 @@ def register_cli_commands(app: Flask) -> None:
             f"всего блюд {Dish.query.count()}",
             fg="green",
         )
-
-
-
