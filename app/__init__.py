@@ -181,3 +181,19 @@ def register_cli_commands(app: Flask) -> None:
             f"всего блюд {Dish.query.count()}",
             fg="green",
         )
+    
+
+    @app.cli.command("create-admin")
+    @click.argument("password", default="kakao")
+    def create_admin(password: str) -> None:
+        """Создать админа Boss с указанным паролем (по умолчанию kakao)."""
+        with app.app_context():
+            db.create_all()  # на всякий случай создаст таблицы
+            if AdminUser.query.filter_by(username="Boss").first():
+                click.secho("Админ Boss уже существует!", fg="yellow")
+                return
+            boss = AdminUser(username="Boss")
+            boss.set_password(password)
+            db.session.add(boss)
+            db.session.commit()
+            click.secho("Админ Boss успешно создан! Логин: Boss, Пароль: " + password, fg="green")
